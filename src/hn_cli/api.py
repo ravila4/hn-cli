@@ -84,6 +84,10 @@ async def _asearch(
     limit: int,
     sort: Sort,
 ) -> list[Story]:
+    if not query.strip():
+        # Algolia returns all-time top stories on empty query, which is almost
+        # never what a caller (especially an agent) actually wants.
+        raise ValueError("search query cannot be empty")
     filters: list[str] = []
     if min_score is not None:
         filters.append(f"points>={min_score}")

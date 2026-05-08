@@ -45,6 +45,10 @@ def test_item_json_emits_single_object(runner, mock, algolia_item_42):
     assert obj["id"] == 42
     assert obj["title"] == "A test story"
     assert isinstance(obj["children"], list)
+    # `hn item` always carries the comment-tree fields, even when empty,
+    # because absence here would conflate "thread fetched, no comments" with
+    # the listing-command shape that drops them entirely.
+    assert "truncated_replies" in obj
 
 
 def test_item_depth_truncates(runner, mock, algolia_item_42):
@@ -139,23 +143,83 @@ def test_top_jsonl(runner, mock, firebase_topstories, firebase_item_42):
     lines = [ln for ln in res.stdout.splitlines() if ln.strip()]
     assert len(lines) == 3
     for line in lines:
-        json.loads(line)  # parses
+        obj = json.loads(line)
+        # Listing commands strip the unused tree fields.
+        assert "children" not in obj
+        assert "truncated_replies" not in obj
 
 
-def test_top_feed_routing(runner, mock, firebase_topstories, firebase_item_42):
-    route = mock.get(f"{FIREBASE}/beststories.json").mock(
+@pytest.mark.parametrize(
+    "subcmd, feed_file",
+    [
+        ("new", "newstories.json"),
+        ("best", "beststories.json"),
+        ("ask", "askstories.json"),
+        ("show", "showstories.json"),
+        ("jobs", "jobstories.json"),
+    ],
+)
+def test_feed_subcommands_route_correctly(
+    runner, mock, firebase_topstories, firebase_item_42, subcmd, feed_file
+):
+    route = mock.get(f"{FIREBASE}/{feed_file}").mock(
         return_value=httpx.Response(200, json=firebase_topstories)
     )
     for sid in firebase_topstories:
         mock.get(f"{FIREBASE}/item/{sid}.json").mock(
             return_value=httpx.Response(200, json={**firebase_item_42, "id": sid})
         )
-    res = runner.invoke(app, ["top", "--feed", "best", "--limit", "3"])
-    assert res.exit_code == 0
+    res = runner.invoke(app, [subcmd, "--limit", "3"])
+    assert res.exit_code == 0, res.stderr
     assert route.called
 
 
-def test_top_invalid_feed_exits_2(runner):
-    # typer/click validates Enum at parse time → exit code 2 (Usage).
-    res = runner.invoke(app, ["top", "--feed", "bogus"])
-    assert res.exit_code != 0
+def test_short_help_flag_works(runner):
+    # `-h` should be an alias for `--help` at both top-level and per-command.
+    top = runner.invoke(app, ["-h"])
+    assert top.exit_code == 0
+    assert "Usage:" in top.stdout
+
+    sub = runner.invoke(app, ["item", "-h"])
+    assert sub.exit_code == 0
+    assert "Usage:" in sub.stdout
+
+
+# -- empty-results stderr (#1) -----------------------------------------------
+
+
+def test_search_empty_results_writes_stderr(runner, mock):
+    mock.get(f"{ALGOLIA}/search").mock(return_value=httpx.Response(200, json={"hits": []}))
+    res = runner.invoke(app, ["search", "asdfqwerzxcv"])
+    assert res.exit_code == 0
+    assert res.stdout == ""
+    assert "no results" in res.stderr.lower()
+
+
+def test_top_empty_after_min_score_filter(runner, mock, firebase_topstories, firebase_item_42):
+    mock.get(f"{FIREBASE}/topstories.json").mock(
+        return_value=httpx.Response(200, json=firebase_topstories)
+    )
+    for sid in firebase_topstories:
+        mock.get(f"{FIREBASE}/item/{sid}.json").mock(
+            return_value=httpx.Response(200, json={**firebase_item_42, "id": sid, "score": 1})
+        )
+    res = runner.invoke(app, ["top", "--min-score", "999"])
+    assert res.exit_code == 0
+    assert res.stdout == ""
+    assert "no results" in res.stderr.lower()
+
+
+# -- empty-query rejection (#2) ----------------------------------------------
+
+
+def test_search_empty_query_rejected(runner):
+    res = runner.invoke(app, ["search", ""])
+    assert res.exit_code == 1
+    assert "empty" in res.stderr.lower()
+
+
+def test_search_whitespace_query_rejected(runner):
+    res = runner.invoke(app, ["search", "   "])
+    assert res.exit_code == 1
+    assert "empty" in res.stderr.lower()

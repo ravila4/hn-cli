@@ -129,6 +129,49 @@ class TestStoryFromFirebase:
         assert s.descendants == 0
 
 
+class TestEntityDecoding:
+    def test_comment_text_entities_unescaped(self):
+        d = {
+            "id": 1,
+            "type": "comment",
+            "author": "x",
+            "created_at_i": 0,
+            "text": "https:&#x2F;&#x2F;example.com don&#x27;t &amp; do",
+            "children": [],
+        }
+        c = Comment.from_algolia(d)
+        assert c.text == "https://example.com don't & do"
+
+    def test_story_text_entities_unescaped_tags_kept(self):
+        d = {
+            "id": 1,
+            "type": "story",
+            "author": "x",
+            "created_at_i": 0,
+            "title": "t",
+            "url": None,
+            "text": '<p>I&#x27;m using <a href="https:&#x2F;&#x2F;x.com">x</a></p>',
+            "points": 1,
+            "children": [],
+        }
+        s = Story.from_algolia_item(d)
+        assert s.text == '<p>I\'m using <a href="https://x.com">x</a></p>'
+
+    def test_search_hit_story_text_unescaped(self):
+        hit = {
+            "objectID": "1",
+            "title": "t",
+            "url": None,
+            "author": "x",
+            "points": 1,
+            "num_comments": 0,
+            "story_text": "<p>don&#x27;t",
+            "created_at_i": 0,
+        }
+        s = Story.from_algolia_hit(hit)
+        assert s.text == "<p>don't"
+
+
 class TestFrozen:
     def test_story_is_frozen(self):
         s = Story(id=1, title="t", url=None, score=0, by="a", time=0, descendants=0)

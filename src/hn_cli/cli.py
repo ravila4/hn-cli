@@ -1,4 +1,13 @@
-"""typer CLI: `hn item`, `hn search`, `hn top`. Thin shell over hn_cli.api."""
+"""typer CLI for hn-cli.
+
+Subcommands:
+  item                    fetch a story + comment tree
+  search                  full-text search via Algolia
+  top / new / best /
+  ask / show / jobs       front-page feeds (parallel fetch)
+
+Thin shell over hn_cli.api.
+"""
 
 from __future__ import annotations
 
@@ -14,16 +23,12 @@ from hn_cli.errors import HNAPIError
 from hn_cli.models import Story
 from hn_cli.render import story_to_markdown
 
-app = typer.Typer(no_args_is_help=True, add_completion=False, help=__doc__)
-
-
-class _Feed(StrEnum):
-    top = "top"
-    new = "new"
-    best = "best"
-    ask = "ask"
-    show = "show"
-    job = "job"
+app = typer.Typer(
+    no_args_is_help=True,
+    add_completion=False,
+    help=__doc__,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
 
 class _Sort(StrEnum):
@@ -50,7 +55,7 @@ def cmd_item(
 
 @app.command("search", help="Full-text search HN via Algolia.")
 def cmd_search(
-    query: str = typer.Argument(..., help="Search query."),
+    query: str = typer.Argument(..., help="Search query (must be non-empty)."),
     min_score: int = typer.Option(None, "--min-score", help="Drop hits below this score."),
     min_comments: int = typer.Option(
         None, "--min-comments", help="Drop hits below this comment count."
@@ -74,37 +79,105 @@ def cmd_search(
     except (ValueError, HNAPIError) as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None
-    _emit_list(stories, as_json=as_json)
+    _emit_list(stories, as_json=as_json, kind="search")
 
 
-@app.command("top", help="Front-page scan: fetch the top-stories feed in parallel.")
-def cmd_top(
-    limit: int = typer.Option(30, "--limit", "-n", help="Max stories to fetch."),
-    min_score: int = typer.Option(None, "--min-score", help="Post-fetch score filter."),
-    feed: _Feed = typer.Option(_Feed.top, "--feed", help="Alternate front-page feed."),
-    concurrency: int = typer.Option(10, "--concurrency", help="Parallel item fetches."),
-    as_json: bool = typer.Option(False, "--json", help="Emit JSONL instead of markdown."),
+def _run_feed(
+    feed: str, *, limit: int, min_score: int | None, concurrency: int, as_json: bool
 ) -> None:
     try:
-        stories = get_top(
-            limit=limit,
-            min_score=min_score,
-            feed=feed.value,
-            concurrency=concurrency,
-        )
+        stories = get_top(limit=limit, min_score=min_score, feed=feed, concurrency=concurrency)
     except (ValueError, HNAPIError) as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None
-    _emit_list(stories, as_json=as_json)
+    _emit_list(stories, as_json=as_json, kind=feed)
 
 
-def _emit_list(stories: list[Story], *, as_json: bool) -> None:
+@app.command("top", help="Front-page feed (topstories.json).")
+def cmd_top(
+    limit: int = typer.Option(30, "--limit", "-n", help="Max stories to fetch."),
+    min_score: int = typer.Option(None, "--min-score", help="Post-fetch score filter."),
+    concurrency: int = typer.Option(10, "--concurrency", help="Parallel item fetches."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSONL instead of markdown."),
+) -> None:
+    _run_feed("top", limit=limit, min_score=min_score, concurrency=concurrency, as_json=as_json)
+
+
+@app.command("new", help="Newest stories (newstories.json).")
+def cmd_new(
+    limit: int = typer.Option(30, "--limit", "-n"),
+    min_score: int = typer.Option(None, "--min-score"),
+    concurrency: int = typer.Option(10, "--concurrency"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    _run_feed("new", limit=limit, min_score=min_score, concurrency=concurrency, as_json=as_json)
+
+
+@app.command("best", help="Highest-scoring recent stories (beststories.json).")
+def cmd_best(
+    limit: int = typer.Option(30, "--limit", "-n"),
+    min_score: int = typer.Option(None, "--min-score"),
+    concurrency: int = typer.Option(10, "--concurrency"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    _run_feed("best", limit=limit, min_score=min_score, concurrency=concurrency, as_json=as_json)
+
+
+@app.command("ask", help="Ask HN feed (askstories.json).")
+def cmd_ask(
+    limit: int = typer.Option(30, "--limit", "-n"),
+    min_score: int = typer.Option(None, "--min-score"),
+    concurrency: int = typer.Option(10, "--concurrency"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    _run_feed("ask", limit=limit, min_score=min_score, concurrency=concurrency, as_json=as_json)
+
+
+@app.command("show", help="Show HN feed (showstories.json).")
+def cmd_show(
+    limit: int = typer.Option(30, "--limit", "-n"),
+    min_score: int = typer.Option(None, "--min-score"),
+    concurrency: int = typer.Option(10, "--concurrency"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    _run_feed("show", limit=limit, min_score=min_score, concurrency=concurrency, as_json=as_json)
+
+
+@app.command("jobs", help="Job postings (jobstories.json).")
+def cmd_jobs(
+    limit: int = typer.Option(30, "--limit", "-n"),
+    min_score: int = typer.Option(None, "--min-score"),
+    concurrency: int = typer.Option(10, "--concurrency"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    _run_feed("job", limit=limit, min_score=min_score, concurrency=concurrency, as_json=as_json)
+
+
+def _emit_list(stories: list[Story], *, as_json: bool, kind: str) -> None:
+    if not stories:
+        # Empty results aren't an error (the API call succeeded), but a silent
+        # exit-0-with-no-output is indistinguishable from a broken call to an
+        # agent. Surface a hint on stderr; stdout stays empty for `| jq` etc.
+        typer.echo(f"No results from `hn {kind}` matching the given filters.", err=True)
+        return
     if as_json:
         for s in stories:
-            typer.echo(json.dumps(asdict(s), ensure_ascii=False))
+            typer.echo(json.dumps(_listing_dict(s), ensure_ascii=False))
         return
     for i, s in enumerate(stories, 1):
         typer.echo(_story_one_liner(s, i))
+
+
+def _listing_dict(s: Story) -> dict:
+    """Drop comment-tree fields from feed/search rows (we never fetched them).
+
+    `hn item` keeps `children: []` because there a story with zero comments
+    is meaningfully different from "thread not fetched"; here it isn't.
+    """
+    d = asdict(s)
+    d.pop("children", None)
+    d.pop("truncated_replies", None)
+    return d
 
 
 def _story_one_liner(s: Story, idx: int) -> str:

@@ -7,8 +7,19 @@ JSON output); the markdown renderer is a separate serialization.
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def _decode_entities(s: str | None) -> str | None:
+    """Unescape HTML entities (`&#x2F;` → `/`) while leaving tags intact.
+
+    Algolia and Firebase return text with entities applied even inside <a href="...">
+    URLs. The markdown renderer would handle this on its own, but JSON consumers
+    see the raw text — so we normalize once at the boundary.
+    """
+    return None if s is None else html.unescape(s)
 
 
 @dataclass(frozen=True)
@@ -36,8 +47,7 @@ class Comment:
         # Algolia returns deleted/dead comments with author=None and text=None.
         # Surface as a placeholder so consumers can distinguish "no comment here"
         # from "structure exists but content is gone."
-        if author is None and text is None:
-            text = "[deleted]"
+        text = "[deleted]" if author is None and text is None else _decode_entities(text)
         return cls(
             id=int(d["id"]),
             by=author,
@@ -79,7 +89,7 @@ class Story:
             # Algolia items/{id} doesn't return a top-level descendants count;
             # count the tree. May lag Firebase by minutes. Spec accepts the drift.
             descendants=_count_descendants(children),
-            text=d.get("text"),
+            text=_decode_entities(d.get("text")),
             children=children,
         )
 
@@ -94,7 +104,7 @@ class Story:
             by=d.get("author") or "",
             time=int(d.get("created_at_i", 0)),
             descendants=int(d.get("num_comments") or 0),
-            text=d.get("story_text"),
+            text=_decode_entities(d.get("story_text")),
             children=(),
         )
 
@@ -109,7 +119,7 @@ class Story:
             by=d.get("by") or "",
             time=int(d.get("time") or 0),
             descendants=int(d.get("descendants") or 0),
-            text=d.get("text"),
+            text=_decode_entities(d.get("text")),
             children=(),
         )
 
