@@ -5,7 +5,11 @@ A small CLI and Python library for fetching and searching Hacker News. Reads sto
 ## Install
 
 ```sh
-uv tool install /Users/ravila/Projects/hn-cli
+# Install the `hn` CLI globally (recommended — uses uv's tool sandbox)
+uv tool install git+https://github.com/ravila4/hn-cli
+
+# Or clone and use as a project dependency
+git clone https://github.com/ravila4/hn-cli && cd hn-cli && uv sync
 ```
 
 ## Usage
@@ -34,6 +38,6 @@ hits = search("rust async", min_score=100, min_comments=30)
 front = get_top(limit=30, min_score=50)
 ```
 
-## Status
+## Docs
 
-Specification only. See `CLAUDE.md` for the contract; implementation lands in a follow-up pass.
+`SKILL.md` is the agent-facing reference (flag tables, JSON schema, quirks). `CLAUDE.md` is the spec the implementation conforms to.
