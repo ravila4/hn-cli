@@ -26,6 +26,17 @@ _FEED_FILES = {
     "job": "jobstories.json",
 }
 
+# Algolia tag syntax: comma is AND, parens denote OR within a group. Ask/Show
+# HN posts are tagged BOTH `story` AND `ask_hn` / `show_hn`, so requiring both
+# narrows correctly. `(story,...)` would have been OR — that returns the union,
+# the opposite of what a `--type show` caller wants.
+_TAG_FOR_TYPE = {
+    "story": "story",
+    "ask": "story,ask_hn",
+    "show": "story,show_hn",
+    "job": "job",
+}
+
 
 def _user_agent() -> str:
     try:
@@ -91,11 +102,14 @@ class HNClient:
         numeric_filters: list[str] | None = None,
         limit: int = 30,
         sort: str = "relevance",
+        type_: str = "story",
     ) -> dict[str, Any]:
         endpoint = "search" if sort == "relevance" else "search_by_date"
+        if type_ not in _TAG_FOR_TYPE:
+            raise ValueError(f"unknown type {type_!r}; expected one of {sorted(_TAG_FOR_TYPE)}")
         params: dict[str, str] = {
             "query": query,
-            "tags": "story",
+            "tags": _TAG_FOR_TYPE[type_],
             "hitsPerPage": str(limit),
         }
         if numeric_filters:

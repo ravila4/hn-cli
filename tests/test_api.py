@@ -101,6 +101,30 @@ def test_search_by_date_uses_search_by_date_endpoint(mock, algolia_search_rust):
     assert route.called
 
 
+@pytest.mark.parametrize(
+    "type_, expected_tag",
+    [
+        ("story", "story"),
+        ("ask", "story,ask_hn"),
+        ("show", "story,show_hn"),
+        ("job", "job"),
+    ],
+)
+def test_search_type_forwards_to_algolia_tag(mock, algolia_search_rust, type_, expected_tag):
+    route = mock.get(f"{ALGOLIA}/search").mock(
+        return_value=httpx.Response(200, json=algolia_search_rust)
+    )
+    api.search("rust", type_=type_)
+    sent = route.calls[0].request.url
+    assert sent.params["tags"] == expected_tag
+
+
+def test_search_rejects_unknown_type(mock, algolia_search_rust):
+    mock.get(f"{ALGOLIA}/search").mock(return_value=httpx.Response(200, json=algolia_search_rust))
+    with pytest.raises(ValueError):
+        api.search("rust", type_="poll")  # type: ignore[arg-type]
+
+
 # -- get_top -----------------------------------------------------------------
 
 

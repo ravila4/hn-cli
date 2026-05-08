@@ -87,7 +87,7 @@ def story_to_markdown(s: Story, *, now: int | None = None) -> str:
     lines.append(f"# {s.title}")
     lines.append("")
     meta = (
-        f"**{s.score} points** · {s.by} · {_time_ago(s.time, n)} · "
+        f"**{s.score} points** · {s.by} · {time_ago(s.time, n)} · "
         f"{s.descendants} comments · id {s.id}"
     )
     lines.append(meta)
@@ -118,7 +118,7 @@ def comment_to_markdown(c: Comment, *, depth: int = 0, now: int | None = None) -
     if c.by is None and c.text == "[deleted]":
         lines.append(f"{pad}- _[deleted]_")
     else:
-        header = f"{pad}- **{c.by or '[deleted]'}** · {_time_ago(c.time, n)}"
+        header = f"{pad}- **{c.by or '[deleted]'}** · {time_ago(c.time, n)}"
         lines.append(header)
         body = html_to_markdown(c.text or "")
         if body:
@@ -138,7 +138,7 @@ def _now(now: int | None) -> int:
     return int(time.time()) if now is None else now
 
 
-def _time_ago(t: int, now: int) -> str:
+def time_ago(t: int, now: int) -> str:
     delta = max(0, now - t)
     if delta < 60:
         return f"{delta}s ago"

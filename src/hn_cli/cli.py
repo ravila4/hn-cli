@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html
 import json
+import time
 import webbrowser
 from dataclasses import asdict
 from enum import StrEnum
@@ -19,7 +20,7 @@ from hn_cli.api import search as api_search
 from hn_cli.errors import HNAPIError
 from hn_cli.models import Story
 from hn_cli.parsing import parse_item_id
-from hn_cli.render import story_to_markdown
+from hn_cli.render import story_to_markdown, time_ago
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -32,6 +33,13 @@ app = typer.Typer(
 class _Sort(StrEnum):
     relevance = "relevance"
     date = "date"
+
+
+class _StoryType(StrEnum):
+    story = "story"
+    ask = "ask"
+    show = "show"
+    job = "job"
 
 
 @app.command("item", help="Fetch a story plus its comment tree.")
@@ -59,6 +67,11 @@ def cmd_open(
         "--story",
         help="Open the linked article instead of the HN comment page (errors on self-posts).",
     ),
+    print_url: bool = typer.Option(
+        False,
+        "--print-url",
+        help="Print the URL to stdout instead of opening a browser.",
+    ),
 ) -> None:
     try:
         item_id = parse_item_id(id_or_url)
@@ -66,7 +79,11 @@ def cmd_open(
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None
     if not story:
-        webbrowser.open(f"https://news.ycombinator.com/item?id={item_id}", new=2)
+        target = f"https://news.ycombinator.com/item?id={item_id}"
+        if print_url:
+            typer.echo(target)
+        else:
+            webbrowser.open(target, new=2)
         return
     try:
         s = get_item(item_id, depth=0)
@@ -76,7 +93,10 @@ def cmd_open(
     if not s.url:
         typer.echo(f"item {item_id} is a self-post; no external URL to open.", err=True)
         raise typer.Exit(1)
-    webbrowser.open(s.url, new=2)
+    if print_url:
+        typer.echo(s.url)
+    else:
+        webbrowser.open(s.url, new=2)
 
 
 @app.command("search", help="Full-text search HN via Algolia.")
@@ -91,6 +111,11 @@ def cmd_search(
     ),
     limit: int = typer.Option(30, "--limit", "-n", help="Max hits to return."),
     sort: _Sort = typer.Option(_Sort.relevance, "--sort", help="Ranking strategy."),
+    type_: _StoryType = typer.Option(
+        _StoryType.story,
+        "--type",
+        help="Filter by submission kind. `story` matches all non-job posts (incl. Ask/Show).",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSONL instead of markdown."),
 ) -> None:
     try:
@@ -101,6 +126,7 @@ def cmd_search(
             since=since,
             limit=limit,
             sort=sort.value,
+            type_=type_.value,
         )
     except (ValueError, HNAPIError) as e:
         typer.echo(str(e), err=True)
@@ -190,8 +216,10 @@ def _emit_list(stories: list[Story], *, as_json: bool, kind: str) -> None:
         for s in stories:
             typer.echo(json.dumps(_listing_dict(s), ensure_ascii=False))
         return
+    # One clock per invocation keeps relative timestamps consistent across rows.
+    now = int(time.time())
     for i, s in enumerate(stories, 1):
-        typer.echo(_story_one_liner(s, i))
+        typer.echo(_story_one_liner(s, i, now=now))
 
 
 def _listing_dict(s: Story) -> dict:
@@ -225,9 +253,13 @@ def _to_json(d: dict[str, Any]) -> dict[str, Any]:
     return d
 
 
-def _story_one_liner(s: Story, idx: int) -> str:
+def _story_one_liner(s: Story, idx: int, *, now: int) -> str:
     tail = f"  {s.url}" if s.url else ""
-    return f"{idx:>2}. {s.title}\n    {s.score} pts · {s.by} · {s.descendants}c · id {s.id}{tail}"
+    return (
+        f"{idx:>2}. {s.title}\n"
+        f"    {s.score} pts · {s.by} · {time_ago(s.time, now)} · "
+        f"{s.descendants}c · id {s.id}{tail}"
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

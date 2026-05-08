@@ -75,7 +75,10 @@ def parse_duration(s: str) -> int:
     cleaned = s.strip().lower()
     m = _DURATION_RE.match(cleaned)
     if not m:
-        raise ValueError(f"invalid duration: {s!r}")
+        raise ValueError(
+            f"invalid duration: {s!r}; expected forms like '7d', '24h', '30m' "
+            "(units: s, m, h, d, w, y)"
+        )
     n, unit = int(m.group(1)), m.group(2)
     return n * _DURATION_UNITS[unit]
 
@@ -87,14 +90,20 @@ def truncate_story(story: Story, max_depth: int) -> Story:
     in `story.truncated_replies`. `max_depth=1` keeps top-level comments but
     strips their replies, and so on.
 
+    `truncated_total` is the aggregated answer to "how many descendants are
+    out there that I'm not seeing right now" — useful for deciding whether
+    to refetch with a deeper `--depth`. `truncated_replies` keeps its
+    per-parent semantics.
+
     Note: this is a client-side prune. Algolia's `items/{id}` returns the
     full thread regardless of depth — there is no server-side knob here.
     """
     if max_depth <= 0:
         n = _count_descendants(story.children)
-        return replace(story, children=(), truncated_replies=n)
+        return replace(story, children=(), truncated_replies=n, truncated_total=n)
     new_children = tuple(_truncate_comment(c, max_depth - 1) for c in story.children)
-    return replace(story, children=new_children, truncated_replies=0)
+    total = _sum_truncated(new_children)
+    return replace(story, children=new_children, truncated_replies=0, truncated_total=total)
 
 
 def _truncate_comment(c: Comment, remaining: int) -> Comment:
@@ -107,3 +116,7 @@ def _truncate_comment(c: Comment, remaining: int) -> Comment:
 
 def _count_descendants(children: tuple[Comment, ...]) -> int:
     return sum(1 + _count_descendants(c.children) for c in children)
+
+
+def _sum_truncated(children: tuple[Comment, ...]) -> int:
+    return sum(c.truncated_replies + _sum_truncated(c.children) for c in children)

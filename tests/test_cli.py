@@ -330,3 +330,75 @@ def test_open_invalid_id_exits_1(runner, monkeypatch):
     res = runner.invoke(app, ["open", "not_a_number"])
     assert res.exit_code == 1
     assert res.stderr
+
+
+# -- hn open --print-url -----------------------------------------------------
+
+
+def test_open_print_url_prints_hn_comment_page(runner, monkeypatch):
+    monkeypatch.setattr(
+        "hn_cli.cli.webbrowser.open",
+        lambda *_a, **_k: pytest.fail("--print-url should not open a browser"),
+    )
+    res = runner.invoke(app, ["open", "48052537", "--print-url"])
+    assert res.exit_code == 0
+    assert res.stdout.strip() == "https://news.ycombinator.com/item?id=48052537"
+
+
+def test_open_print_url_with_story_prints_external(runner, mock, algolia_item_42, monkeypatch):
+    mock.get(f"{ALGOLIA}/items/42").mock(return_value=httpx.Response(200, json=algolia_item_42))
+    monkeypatch.setattr(
+        "hn_cli.cli.webbrowser.open",
+        lambda *_a, **_k: pytest.fail("--print-url should not open a browser"),
+    )
+    res = runner.invoke(app, ["open", "42", "--story", "--print-url"])
+    assert res.exit_code == 0
+    assert res.stdout.strip() == "https://example.com/foo"
+
+
+# -- hn search --type --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "cli_type, expected_tag",
+    [
+        ("story", "story"),
+        ("ask", "story,ask_hn"),
+        ("show", "story,show_hn"),
+        ("job", "job"),
+    ],
+)
+def test_search_type_flag_forwards_tag(runner, mock, algolia_search_rust, cli_type, expected_tag):
+    route = mock.get(f"{ALGOLIA}/search").mock(
+        return_value=httpx.Response(200, json=algolia_search_rust)
+    )
+    res = runner.invoke(app, ["search", "rust", "--type", cli_type])
+    assert res.exit_code == 0, res.stderr
+    sent = route.calls[0].request.url
+    assert sent.params["tags"] == expected_tag
+
+
+# -- relative timestamps in feed/search markdown -----------------------------
+
+
+def test_search_markdown_includes_relative_timestamp(runner, mock, algolia_search_rust):
+    mock.get(f"{ALGOLIA}/search").mock(return_value=httpx.Response(200, json=algolia_search_rust))
+    res = runner.invoke(app, ["search", "rust"])
+    # Fixture `created_at_i` is in 2023; "y ago" or "d ago" should appear.
+    assert res.exit_code == 0
+    assert " ago" in res.stdout
+
+
+def test_top_markdown_includes_relative_timestamp(
+    runner, mock, firebase_topstories, firebase_item_42
+):
+    mock.get(f"{FIREBASE}/topstories.json").mock(
+        return_value=httpx.Response(200, json=firebase_topstories)
+    )
+    for sid in firebase_topstories:
+        mock.get(f"{FIREBASE}/item/{sid}.json").mock(
+            return_value=httpx.Response(200, json={**firebase_item_42, "id": sid})
+        )
+    res = runner.invoke(app, ["top", "--limit", "3"])
+    assert res.exit_code == 0
+    assert " ago" in res.stdout

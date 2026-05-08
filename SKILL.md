@@ -39,10 +39,13 @@ All commands accept `-h` / `--help`.
 
 - `--json` — emit JSON. Single object for `hn item`; JSONL (one object per line) for everything else.
 - `-n / --limit N` — cap result count (default 30 for feeds and search).
-- `--min-score N` — drop low-scoring results.
-- `-d / --depth N` (item only) — max comment nesting depth (default 3). Beyond that, replies are pruned and reported via `truncated_replies` in JSON / `[N replies not shown]` in markdown.
+- `--min-score N` — drop low-scoring results (search and feeds).
+- `--min-comments N` (search only) — drop hits below this comment count (`descendants >= N`).
+- `-d / --depth N` (item only) — max comment nesting depth (default 3). `--depth 0` returns story metadata + total descendant count without rendering or transferring the comment tree — use it to probe a thread's size before drilling in. Replies beyond `--depth` are pruned and reported via `truncated_replies` (per-parent) and `truncated_total` (aggregated) in JSON, and `[N replies not shown]` in markdown.
 - `--since DURATION` (search only) — filter to recent items. Duration strings: `30s`, `30m`, `24h`, `7d`, `2w`, `1y`. Case-insensitive. Strings — not integers.
 - `--sort relevance|date` (search only) — Algolia ranking strategy.
+- `--type story|ask|show|job` (search only) — filter by submission kind. Default `story` matches all non-job posts (including Ask/Show HN). `ask`/`show` narrow to those subtypes; `job` switches to the jobs tag.
+- `--print-url` (open only) — print the URL to stdout instead of opening a browser. Pairs with `--story` to print the linked article URL.
 - `--concurrency N` (feeds only) — bound parallel item fetches (default 10).
 
 ## Examples
@@ -50,15 +53,25 @@ All commands accept `-h` / `--help`.
 ```sh
 # Triage the front page
 hn top --limit 10
-hn top --limit 30 --json | jq -c '{id, title, score}'
+hn top --limit 30 --json | jq -c '{id, title, score, type}'
 
-# Pull a thread by URL or ID
-hn item https://news.ycombinator.com/item?id=48052537 --depth 2
+# Pull a thread by URL or ID (quote URLs in zsh — `?id=` is a glob)
+hn item "https://news.ycombinator.com/item?id=48052537" --depth 2
 hn item 48052537 --json > thread.json
 
+# Probe a thread's size before pulling the full tree
+hn item 48052537 --depth 0 --json | jq '.descendants'
+
 # Search with filters
-hn search "rust async" --min-score 100 --since 7d --limit 5
+hn search "rust async" --min-score 100 --min-comments 50 --since 7d --limit 5
 hn search "AI safety" --sort date --json
+hn search "tokio" --type show --limit 10        # Show HN posts only
+
+# Get the canonical HN URL for an item (no browser)
+hn open 48052537 --print-url
+
+# Strip HTML tags from any `text` field in a thread
+hn item 48052537 --json | jq '.. | .text? // empty | gsub("<[^>]+>"; "")'
 ```
 
 ## Library use
@@ -67,35 +80,43 @@ hn search "AI safety" --sort date --json
 from hn_cli import get_item, search, get_top, Story, Comment, HNAPIError
 
 story  = get_item(48052537, depth=2)
-hits   = search("rust async", min_score=100, since="7d", limit=5)
+hits   = search("rust async", min_score=100, min_comments=50, since="7d", limit=5)
+shows  = search("tokio", type_="show")  # CLI `--type` maps to kwarg `type_`
 front  = get_top(limit=30, min_score=50, feed="top")  # also: "new"|"best"|"ask"|"show"|"job"
 ```
 
-Library kwargs match CLI flag names one-to-one (snake_case where flags use kebab-case). `since` is a duration string, never an integer day count. The library exposes `get_top(feed=…)` for all six feeds rather than separate functions; the CLI splits them into named subcommands purely for ergonomics.
+Library kwargs match CLI flag names one-to-one (snake_case where flags use kebab-case). `--type` is `type_=` in Python — `type` is a builtin, so the kwarg gets a trailing underscore. `since` is a duration string, never an integer day count. The library exposes `get_top(feed=…)` for all six feeds rather than separate functions; the CLI splits them into named subcommands purely for ergonomics.
 
 ## Output schema (when `--json`)
 
 Story / search-hit / item objects always include:
 
-| field | type |
-|---|---|
-| `id` | int |
-| `title` | string |
-| `url` | string \| null (null for self-posts) |
-| `score` | int |
-| `by` | string |
-| `time` | int (Unix epoch seconds) |
-| `descendants` | int (comment count at fetch time) |
-| `text` | string \| null (HTML body for self-posts; null otherwise) |
+| field | type | notes |
+|---|---|---|
+| `id` | int | HN canonical item ID |
+| `title` | string | |
+| `url` | string \| null | null for self-posts (Ask/Show/job posts may also be null) |
+| `score` | int | upvote score at fetch time |
+| `by` | string | author handle |
+| `time` | int | Unix epoch seconds |
+| `descendants` | int | comment count at fetch time |
+| `type` | string | one of `story`, `ask`, `show`, `job` |
 
-`hn item` additionally includes:
+Self-post-only field (present when upstream provides it; absent on link posts and Firebase-feed listings):
 
-| field | type |
-|---|---|
-| `children` | array of comment objects (each: `id`, `by`, `time`, `text`, `children`, `truncated_replies`) |
-| `truncated_replies` | int (>0 if `--depth` pruned descendants at the root) |
+| field | type | notes |
+|---|---|---|
+| `text` | string | HTML body. JSON output entity-decodes (e.g. `&#x27;` → `'`) but preserves tags. |
 
-`hn top|new|best|ask|show|jobs` and `hn search` **omit** `children` and `truncated_replies` because those commands never fetch the comment tree. Detect a missing `children` key as "thread not fetched, call `hn item <id>` to drill in."
+`hn item` additionally includes (these are NEVER present in feed/search output, since those commands don't fetch the tree):
+
+| field | type | notes |
+|---|---|---|
+| `children` | array | each child: `id`, `by`, `time`, `text`, `children`, `truncated_replies` |
+| `truncated_replies` | int | `>0` only when `--depth` pruned descendants directly at the root (i.e. `--depth 0`) |
+| `truncated_total` | int | aggregated count of all pruned descendants across the whole tree. Use to decide whether to refetch with deeper `--depth`. |
+
+`hn top|new|best|ask|show|jobs` and `hn search` **omit** `children`, `truncated_replies`, and `truncated_total`. Detect a missing `children` key as "thread not fetched, call `hn item <id>` to drill in."
 
 In **JSON output**, `text` fields have HTML entities decoded (`&#x2F;` → `/`, `&#x27;` → `'`, `&amp;` → `&`) but tags are preserved as-is — strip or render to taste. Library callers reading `Story.text` / `Comment.text` directly see **raw HTML** with entities intact; decode with `html.unescape()` if needed. The split is deliberate: decoding before passing through the markdown renderer corrupts content that legitimately contains escaped HTML special chars (`&lt;div&gt;`).
 
@@ -111,7 +132,11 @@ The library raises `ValueError` for parse errors and `hn_cli.HNAPIError` for HTT
 
 ## Quirks
 
+- **Empty results go to stderr, not stdout.** When a query/filter yields zero hits, exit code is `0` and stdout is empty (so `| jq` doesn't choke on garbage). The "no results" hint is on **stderr**. Pipelines that pipe straight to `jq` will silently see zero JSON lines on empty — check the exit code or merge streams (`2>&1 | …`) if you need to disambiguate from a network truncation.
 - **Empty search query is rejected.** Algolia returns all-time top stories on empty query, which is almost never what a caller wants.
+- **No per-comment scores.** Algolia's `items/{id}` payload omits per-comment points. Reply count and text length are the available proxies for engagement; don't treat them as quality signals. Per-comment scores would require N+1 Firebase fetches, which defeats the killer single-call thread fetch.
+- **Quote URLs in zsh.** `news.ycombinator.com/item?id=…` contains `?` which zsh treats as a glob — quote the URL or it'll fail with "no matches found" before `hn` ever runs.
+- **Feed ordering is HN's native ranking, unbounded.** `hn new` is recency-ordered; `hn top`/`hn best` use HN's score+age decay. There's no `--since` flag on feeds — narrow the window with `--limit`.
 - **`hn search` indexing lags Firebase** by minutes for new stories. Score and comment counts on the same item may differ between `hn search` (Algolia) and `hn item` (Algolia, slightly different index) and `hn top` (Firebase, real-time). Spec accepts the drift; don't try to reconcile.
 - **No persistent cache.** Every invocation hits the API.
 - **Sync-only library.** `get_item`, `search`, and `get_top` use `asyncio.run` internally. Calling them from inside a running event loop (Jupyter, FastAPI handlers, async agent frameworks like LangChain/CrewAI) raises `RuntimeError: asyncio.run() cannot be called from a running event loop`. Workaround: subprocess the CLI (`hn item …`) instead of importing the library, or run the call in a worker thread.

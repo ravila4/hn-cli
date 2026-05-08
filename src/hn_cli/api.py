@@ -18,6 +18,7 @@ from hn_cli.parsing import parse_duration, parse_item_id, truncate_story
 
 Sort = Literal["relevance", "date"]
 Feed = Literal["top", "new", "best", "ask", "show", "job"]
+SearchType = Literal["story", "ask", "show", "job"]
 
 
 def get_item(id_or_url: int | str, *, depth: int = 3) -> Story:
@@ -33,8 +34,14 @@ def search(
     since: str | None = None,
     limit: int = 30,
     sort: Sort = "relevance",
+    type_: SearchType = "story",
 ) -> list[Story]:
-    """Search HN via Algolia. `since` accepts duration strings like '7d', '24h'."""
+    """Search HN via Algolia. `since` accepts duration strings like '7d', '24h'.
+
+    `type_` filters by submission kind (`story`, `ask`, `show`, `job`); default
+    `story` matches all non-job submissions including Ask/Show HN, mirroring
+    the prior behavior.
+    """
     return asyncio.run(
         _asearch(
             query,
@@ -43,6 +50,7 @@ def search(
             since=since,
             limit=limit,
             sort=sort,
+            type_=type_,
         )
     )
 
@@ -83,6 +91,7 @@ async def _asearch(
     since: str | None,
     limit: int,
     sort: Sort,
+    type_: SearchType,
 ) -> list[Story]:
     if not query.strip():
         # Algolia returns all-time top stories on empty query, which is almost
@@ -98,7 +107,11 @@ async def _asearch(
         filters.append(f"created_at_i>{cutoff}")
     async with HNClient() as c:
         data = await c.search_algolia(
-            query, numeric_filters=filters or None, limit=limit, sort=sort
+            query,
+            numeric_filters=filters or None,
+            limit=limit,
+            sort=sort,
+            type_=type_,
         )
     return [Story.from_algolia_hit(h) for h in data.get("hits") or ()]
 

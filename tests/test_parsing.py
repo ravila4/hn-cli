@@ -83,3 +83,13 @@ class TestParseDuration:
     def test_rejects_bad_input(self, bad):
         with pytest.raises(ValueError):
             parse_duration(bad)
+
+    def test_error_message_lists_accepted_forms(self):
+        # Agents that fed e.g. "two weeks" had to dig through source for the
+        # accepted vocabulary. The error itself should now say it.
+        with pytest.raises(ValueError) as exc:
+            parse_duration("two weeks")
+        msg = str(exc.value)
+        assert "7d" in msg or "24h" in msg
+        for unit in ("s", "m", "h", "d", "w", "y"):
+            assert unit in msg

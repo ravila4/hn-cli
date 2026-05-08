@@ -75,3 +75,37 @@ def test_negative_depth_treated_as_zero():
     out = truncate_story(s, -5)
     assert out.children == ()
     assert out.truncated_replies == 2
+
+
+class TestTruncatedTotal:
+    """Aggregated count across the whole tree — answers 'is there more out
+    there I'm not seeing?' without requiring callers to walk the tree."""
+
+    def test_zero_when_nothing_pruned(self):
+        s = _story(_comment(2, _comment(3)), _comment(4))
+        out = truncate_story(s, 99)
+        assert out.truncated_total == 0
+
+    def test_equals_descendant_count_at_depth_zero(self):
+        s = _story(_comment(2, _comment(3, _comment(4))), _comment(5))
+        out = truncate_story(s, 0)
+        # 4 descendants total; total == story-level truncated_replies here.
+        assert out.truncated_total == 4
+        assert out.truncated_replies == 4
+
+    def test_aggregates_across_multiple_parents(self):
+        # Two top-level comments, each with one pruned child. Per-parent
+        # `truncated_replies` is 1 each; aggregated total should be 2.
+        s = _story(_comment(2, _comment(3)), _comment(4, _comment(5)))
+        out = truncate_story(s, 1)
+        assert out.children[0].truncated_replies == 1
+        assert out.children[1].truncated_replies == 1
+        assert out.truncated_total == 2
+        assert out.truncated_replies == 0
+
+    def test_aggregates_deeper_pruning(self):
+        # depth=2 keeps 2 levels; the third level (one node) is pruned.
+        s = _story(_comment(2, _comment(3, _comment(4, _comment(5)))))
+        out = truncate_story(s, 2)
+        # `4` and its child `5` are gone — that's 2 pruned descendants.
+        assert out.truncated_total == 2

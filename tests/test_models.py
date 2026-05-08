@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from hn_cli.models import Comment, Story
+import pytest
+
+from hn_cli.models import Comment, Story, _infer_story_type
 
 
 class TestCommentFromAlgolia:
@@ -176,6 +178,75 @@ class TestRawTextStorage:
         }
         s = Story.from_algolia_hit(hit)
         assert s.text == "<p>don&#x27;t"
+
+
+class TestStoryType:
+    """`type` lets agents triage Ask/Show/Job without a second round trip."""
+
+    @pytest.mark.parametrize(
+        "tags, title, fb_type, expected",
+        [
+            (["story", "ask_hn"], "Ask HN: anything?", None, "ask"),
+            (["story", "show_hn"], "Show HN: my thing", None, "show"),
+            (["job"], "We're hiring", None, "job"),
+            (["story"], "Just a regular link", None, "story"),
+            (None, "Ask HN: title prefix only", None, "ask"),
+            (None, "Show HN: title prefix only", None, "show"),
+            (None, "Senior Engineer at Acme", "job", "job"),
+            (None, "Plain story", "story", "story"),
+        ],
+    )
+    def test_inference(self, tags, title, fb_type, expected):
+        assert _infer_story_type(tags, title, fb_type) == expected
+
+    def test_algolia_item_picks_up_tags(self, algolia_item_42):
+        # Without _tags, falls through to title-prefix and lands on "story".
+        s = Story.from_algolia_item(algolia_item_42)
+        assert s.type == "story"
+
+    def test_algolia_item_with_ask_hn_tag(self):
+        d = {
+            "id": 1,
+            "type": "story",
+            "author": "x",
+            "created_at_i": 0,
+            "title": "Foo",
+            "url": None,
+            "text": None,
+            "points": 1,
+            "_tags": ["story", "ask_hn"],
+            "children": [],
+        }
+        s = Story.from_algolia_item(d)
+        assert s.type == "ask"
+
+    def test_algolia_item_ask_hn_via_title(self, algolia_item_ask_hn):
+        # Fixture lacks _tags but title starts with "Ask HN".
+        s = Story.from_algolia_item(algolia_item_ask_hn)
+        assert s.type == "ask"
+
+    def test_algolia_hit_via_title_prefix(self, algolia_search_rust):
+        # Second hit's title starts with "Ask HN:".
+        hit = algolia_search_rust["hits"][1]
+        s = Story.from_algolia_hit(hit)
+        assert s.type == "ask"
+
+    def test_firebase_job_type(self):
+        d = {
+            "id": 1,
+            "by": "x",
+            "title": "We are hiring",
+            "score": 0,
+            "time": 0,
+            "descendants": 0,
+            "type": "job",
+        }
+        s = Story.from_firebase(d)
+        assert s.type == "job"
+
+    def test_firebase_ask_via_title(self, firebase_item_self_post):
+        s = Story.from_firebase(firebase_item_self_post)
+        assert s.type == "ask"
 
 
 class TestFrozen:
