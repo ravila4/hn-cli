@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from hn_cli.models import Comment, Story
 
 _ITEM_URL_HOST = "news.ycombinator.com"
+_INT_RE = re.compile(r"^-?\d+$")
 _DURATION_RE = re.compile(r"^(\d+)([smhdwy])$")
 _DURATION_UNITS = {
     "s": 1,
@@ -37,7 +38,7 @@ def parse_item_id(value: int | str) -> int:
     if not s:
         raise ValueError("item id is empty")
 
-    if s.lstrip("-").isdigit():
+    if _INT_RE.match(s):
         n = int(s)
         if n <= 0:
             raise ValueError(f"item id must be positive, got {n}")

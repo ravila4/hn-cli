@@ -266,6 +266,62 @@ def test_open_story_errors_on_self_post(runner, mock, algolia_item_ask_hn, monke
     assert "self-post" in res.stderr.lower() or "no url" in res.stderr.lower()
 
 
+def test_item_json_unescapes_text_fields(runner, mock):
+    # JSON consumers should see decoded text — entities are noise to them.
+    # Library callers (Story.text) still see raw HTML; the conversion is
+    # applied at the JSON serialization step, not at the model boundary.
+    payload = {
+        "id": 99,
+        "created_at_i": 0,
+        "type": "story",
+        "author": "x",
+        "title": "t",
+        "url": None,
+        "text": "<p>see https:&#x2F;&#x2F;example.com</p>",
+        "points": 1,
+        "children": [
+            {
+                "id": 1,
+                "type": "comment",
+                "author": "y",
+                "created_at_i": 0,
+                "text": "don&#x27;t",
+                "children": [],
+            }
+        ],
+    }
+    mock.get(f"{ALGOLIA}/items/99").mock(return_value=httpx.Response(200, json=payload))
+    res = runner.invoke(app, ["item", "99", "--json"])
+    assert res.exit_code == 0
+    obj = json.loads(res.stdout.strip())
+    assert "https://example.com" in obj["text"]
+    assert "&#x2F;" not in obj["text"]
+    assert obj["children"][0]["text"] == "don't"
+
+
+def test_top_json_unescapes_text(runner, mock, firebase_topstories):
+    mock.get(f"{FIREBASE}/topstories.json").mock(return_value=httpx.Response(200, json=[42]))
+    mock.get(f"{FIREBASE}/item/42.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": 42,
+                "by": "x",
+                "title": "Ask HN",
+                "score": 1,
+                "time": 0,
+                "descendants": 0,
+                "text": "<p>visit https:&#x2F;&#x2F;example.com</p>",
+                "type": "story",
+            },
+        )
+    )
+    res = runner.invoke(app, ["top", "--limit", "1", "--json"])
+    assert res.exit_code == 0
+    obj = json.loads(res.stdout.strip())
+    assert "https://example.com" in obj["text"]
+
+
 def test_open_invalid_id_exits_1(runner, monkeypatch):
     monkeypatch.setattr(
         "hn_cli.cli.webbrowser.open",

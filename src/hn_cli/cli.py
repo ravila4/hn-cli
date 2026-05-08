@@ -5,10 +5,12 @@ Read-only: fetches stories, comment trees, and search hits. No auth, no cache.
 
 from __future__ import annotations
 
+import html
 import json
 import webbrowser
 from dataclasses import asdict
 from enum import StrEnum
+from typing import Any
 
 import typer
 
@@ -44,7 +46,7 @@ def cmd_item(
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None
     if as_json:
-        typer.echo(json.dumps(asdict(story), ensure_ascii=False))
+        typer.echo(json.dumps(_to_json(asdict(story)), ensure_ascii=False))
     else:
         typer.echo(story_to_markdown(story), nl=False)
 
@@ -68,7 +70,7 @@ def cmd_open(
         return
     try:
         s = get_item(item_id, depth=0)
-    except HNAPIError as e:
+    except (ValueError, HNAPIError) as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None
     if not s.url:
@@ -198,9 +200,28 @@ def _listing_dict(s: Story) -> dict:
     `hn item` keeps `children: []` because there a story with zero comments
     is meaningfully different from "thread not fetched"; here it isn't.
     """
-    d = asdict(s)
+    d = _to_json(asdict(s))
     d.pop("children", None)
     d.pop("truncated_replies", None)
+    return d
+
+
+def _to_json(d: dict[str, Any]) -> dict[str, Any]:
+    """Recursively unescape HTML entities in `text` fields for JSON output.
+
+    Decoding happens here, not at the model boundary, because decoded text
+    routed back through the markdown renderer would misparse content like
+    `&lt;div&gt;` as a tag start. Library callers reading `Story.text` see
+    raw HTML; JSON consumers see entity-decoded text. Tags are preserved
+    in both cases.
+    """
+    if isinstance(d.get("text"), str):
+        d["text"] = html.unescape(d["text"])
+    children = d.get("children")
+    # asdict preserves the dataclass's `tuple[Comment, ...]` as a tuple, not a list.
+    if isinstance(children, (list, tuple)):
+        for c in children:
+            _to_json(c)
     return d
 
 

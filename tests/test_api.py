@@ -154,6 +154,25 @@ def test_get_top_uses_feed_kwarg(mock, firebase_topstories, firebase_item_42):
     assert route.called
 
 
+def test_get_top_skips_malformed_firebase_payload(mock, firebase_topstories, firebase_item_42):
+    # Firebase occasionally returns partial data during replication lag — a row
+    # with missing required keys must not abort the whole feed.
+    mock.get(f"{FIREBASE}/topstories.json").mock(
+        return_value=httpx.Response(200, json=firebase_topstories)
+    )
+    mock.get(f"{FIREBASE}/item/42.json").mock(
+        return_value=httpx.Response(200, json={**firebase_item_42, "id": 42})
+    )
+    mock.get(f"{FIREBASE}/item/100.json").mock(
+        return_value=httpx.Response(200, json={"by": "x"})  # missing id, title, etc.
+    )
+    mock.get(f"{FIREBASE}/item/200.json").mock(
+        return_value=httpx.Response(200, json={**firebase_item_42, "id": 200})
+    )
+    stories = api.get_top(limit=3)
+    assert {s.id for s in stories} == {42, 200}
+
+
 def test_get_top_skips_failed_items(mock, firebase_topstories, firebase_item_42):
     mock.get(f"{FIREBASE}/topstories.json").mock(
         return_value=httpx.Response(200, json=firebase_topstories)

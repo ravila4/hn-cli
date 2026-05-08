@@ -118,7 +118,13 @@ async def _aget_top(
                 except HNAPIError:
                     # A 404 mid-feed (deleted item) shouldn't crash the whole listing.
                     return None
-            return Story.from_firebase(data)
+            try:
+                return Story.from_firebase(data)
+            except (KeyError, ValueError, TypeError):
+                # Firebase occasionally returns malformed/partial payloads during
+                # replication lag. Skip the offending item rather than aborting
+                # the whole feed; matches the spirit of the 404 case above.
+                return None
 
         results = await asyncio.gather(*[fetch_one(i) for i in ids])
     stories = [s for s in results if s is not None]

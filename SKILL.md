@@ -97,7 +97,7 @@ Story / search-hit / item objects always include:
 
 `hn top|new|best|ask|show|jobs` and `hn search` **omit** `children` and `truncated_replies` because those commands never fetch the comment tree. Detect a missing `children` key as "thread not fetched, call `hn item <id>` to drill in."
 
-`text` fields have HTML entities decoded (`&#x2F;` → `/`, `&#x27;` → `'`, `&amp;` → `&`) but tags are preserved as-is — strip or render to taste.
+In **JSON output**, `text` fields have HTML entities decoded (`&#x2F;` → `/`, `&#x27;` → `'`, `&amp;` → `&`) but tags are preserved as-is — strip or render to taste. Library callers reading `Story.text` / `Comment.text` directly see **raw HTML** with entities intact; decode with `html.unescape()` if needed. The split is deliberate: decoding before passing through the markdown renderer corrupts content that legitimately contains escaped HTML special chars (`&lt;div&gt;`).
 
 Deleted/dead comments appear in the tree with `text: "[deleted]"` and `by: null`, never silently dropped.
 
@@ -114,3 +114,4 @@ The library raises `ValueError` for parse errors and `hn_cli.HNAPIError` for HTT
 - **Empty search query is rejected.** Algolia returns all-time top stories on empty query, which is almost never what a caller wants.
 - **`hn search` indexing lags Firebase** by minutes for new stories. Score and comment counts on the same item may differ between `hn search` (Algolia) and `hn item` (Algolia, slightly different index) and `hn top` (Firebase, real-time). Spec accepts the drift; don't try to reconcile.
 - **No persistent cache.** Every invocation hits the API.
+- **Sync-only library.** `get_item`, `search`, and `get_top` use `asyncio.run` internally. Calling them from inside a running event loop (Jupyter, FastAPI handlers, async agent frameworks like LangChain/CrewAI) raises `RuntimeError: asyncio.run() cannot be called from a running event loop`. Workaround: subprocess the CLI (`hn item …`) instead of importing the library, or run the call in a worker thread.

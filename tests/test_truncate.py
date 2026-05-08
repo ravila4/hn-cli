@@ -68,3 +68,10 @@ def test_story_with_no_comments_unchanged():
     out = truncate_story(s, 0)
     assert out.children == ()
     assert out.truncated_replies == 0
+
+
+def test_negative_depth_treated_as_zero():
+    s = _story(_comment(2, _comment(3)))
+    out = truncate_story(s, -5)
+    assert out.children == ()
+    assert out.truncated_replies == 2

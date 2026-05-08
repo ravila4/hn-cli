@@ -33,6 +33,10 @@ class TestHtmlToMarkdown:
         out = html_to_markdown("<pre><code>x = 1\ny = 2</code></pre>")
         assert "```" in out
         assert "x = 1\ny = 2" in out
+        # The fence already signals a code block; no inline backticks inside.
+        # Strip out the two fences and assert no stray backticks remain.
+        body = out.replace("```", "")
+        assert "`" not in body
 
     def test_html_entities_decoded(self):
         assert html_to_markdown("a &amp; b") == "a & b"
@@ -44,6 +48,12 @@ class TestHtmlToMarkdown:
 
     def test_unknown_tags_dropped_text_kept(self):
         assert html_to_markdown("<span>kept</span>") == "kept"
+
+    def test_escaped_html_chars_in_text_render_correctly(self):
+        # `&lt;` in content should render as literal `<` in markdown — the
+        # parser handles the entity at tokenization time, not as a tag start.
+        out = html_to_markdown("<p>x &lt; y &gt; z</p>")
+        assert out == "x < y > z"
 
 
 class TestCommentToMarkdown:

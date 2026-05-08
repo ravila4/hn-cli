@@ -34,6 +34,14 @@ class TestParseItemId:
         with pytest.raises(ValueError):
             parse_item_id("https://example.com/foo")
 
+    def test_rejects_hn_url_with_non_decimal_id(self):
+        with pytest.raises(ValueError):
+            parse_item_id("https://news.ycombinator.com/item?id=abc")
+
+    def test_rejects_hn_url_missing_id(self):
+        with pytest.raises(ValueError):
+            parse_item_id("https://news.ycombinator.com/item")
+
     def test_rejects_zero_or_negative(self):
         with pytest.raises(ValueError):
             parse_item_id(0)
