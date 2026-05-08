@@ -1,0 +1,49 @@
+{
+  "id": 42,
+  "created_at": "2007-02-19T07:13:33.000Z",
+  "created_at_i": 1171869213,
+  "type": "story",
+  "author": "alice",
+  "title": "A test story",
+  "url": "https://example.com/foo",
+  "text": null,
+  "points": 100,
+  "parent_id": null,
+  "story_id": null,
+  "children": [
+    {
+      "id": 43,
+      "created_at_i": 1171869300,
+      "type": "comment",
+      "author": "bob",
+      "text": "<p>Great point!</p>",
+      "points": 1,
+      "parent_id": 42,
+      "story_id": 42,
+      "children": [
+        {
+          "id": 44,
+          "created_at_i": 1171869400,
+          "type": "comment",
+          "author": "carol",
+          "text": "<p>Thanks!</p>",
+          "points": null,
+          "parent_id": 43,
+          "story_id": 42,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "created_at_i": 1171869500,
+      "type": "comment",
+      "author": null,
+      "text": null,
+      "points": null,
+      "parent_id": 42,
+      "story_id": 42,
+      "children": []
+    }
+  ]
+}

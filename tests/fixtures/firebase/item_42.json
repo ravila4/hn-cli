@@ -1,0 +1,11 @@
+{
+  "by": "alice",
+  "descendants": 3,
+  "id": 42,
+  "kids": [43, 45],
+  "score": 100,
+  "time": 1171869213,
+  "title": "A test story",
+  "type": "story",
+  "url": "https://example.com/foo"
+}

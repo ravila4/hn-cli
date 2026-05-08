@@ -1,0 +1,28 @@
+{
+  "hits": [
+    {
+      "objectID": "200",
+      "created_at_i": 1700000000,
+      "title": "Rust async runtime comparison",
+      "url": "https://example.com/rust",
+      "author": "rustacean",
+      "points": 250,
+      "num_comments": 130,
+      "story_text": null
+    },
+    {
+      "objectID": "201",
+      "created_at_i": 1700001000,
+      "title": "Ask HN: Tokio vs async-std?",
+      "url": null,
+      "author": "asyncfan",
+      "points": 80,
+      "num_comments": 40,
+      "story_text": "<p>What do you all use?</p>"
+    }
+  ],
+  "nbHits": 2,
+  "page": 0,
+  "nbPages": 1,
+  "hitsPerPage": 20
+}
