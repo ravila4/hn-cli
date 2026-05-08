@@ -72,6 +72,12 @@ hn open 48052537 --print-url
 
 # Strip HTML tags from any `text` field in a thread
 hn item 48052537 --json | jq '.. | .text? // empty | gsub("<[^>]+>"; "")'
+
+# Rank top-level threads by total subtree size (engagement proxy — see Quirks)
+hn item 48052537 --json | jq '.children
+  | map({id, by, replies: ([.. | objects | select(has("text"))] | length)})
+  | sort_by(-.replies)
+  | .[:5]'
 ```
 
 ## Library use
@@ -134,7 +140,9 @@ The library raises `ValueError` for parse errors and `hn_cli.HNAPIError` for HTT
 
 - **Empty results go to stderr, not stdout.** When a query/filter yields zero hits, exit code is `0` and stdout is empty (so `| jq` doesn't choke on garbage). The "no results" hint is on **stderr**. Pipelines that pipe straight to `jq` will silently see zero JSON lines on empty — check the exit code or merge streams (`2>&1 | …`) if you need to disambiguate from a network truncation.
 - **Empty search query is rejected.** Algolia returns all-time top stories on empty query, which is almost never what a caller wants.
-- **No per-comment scores.** Algolia's `items/{id}` payload omits per-comment points. Reply count and text length are the available proxies for engagement; don't treat them as quality signals. Per-comment scores would require N+1 Firebase fetches, which defeats the killer single-call thread fetch.
+- **No per-comment scores.** Algolia's `items/{id}` payload omits per-comment points. Reply count and text length are the available proxies for engagement; don't treat them as quality signals. To rank top-level threads by engagement, count the *whole subtree* (`[.. | objects | select(has("text"))] | length`) — `.children | length` only counts direct replies and will mis-rank long single-thread debates as low-engagement. Per-comment scores would require N+1 Firebase fetches, which defeats the killer single-call thread fetch.
+- **Algolia sparse-tree on cold fetches.** Algolia occasionally returns a partial comment tree (e.g. 30 of 281 comments) on the first call to a popular thread; `descendants` still reports the true count, so the tree is shorter than it claims. Cross-check `descendants` against actual comment count (`[.. | objects | select(has("text"))] | length`); refetch if they disagree. The library does not auto-retry — caller decides.
+- **Search matches title + body + url.** Algolia full-text-searches all three fields, so `hn search "rust"` will surface posts whose URL or body mentions Rust even if the title doesn't. Filter client-side with `jq 'select(.title | test("rust"; "i"))'` if you need title-only matches.
 - **Quote URLs in zsh.** `news.ycombinator.com/item?id=…` contains `?` which zsh treats as a glob — quote the URL or it'll fail with "no matches found" before `hn` ever runs.
 - **Feed ordering is HN's native ranking, unbounded.** `hn new` is recency-ordered; `hn top`/`hn best` use HN's score+age decay. There's no `--since` flag on feeds — narrow the window with `--limit`.
 - **`hn search` indexing lags Firebase** by minutes for new stories. Score and comment counts on the same item may differ between `hn search` (Algolia) and `hn item` (Algolia, slightly different index) and `hn top` (Firebase, real-time). Spec accepts the drift; don't try to reconcile.
