@@ -1,17 +1,12 @@
-"""typer CLI for hn-cli.
+"""Hacker News for humans and agents — markdown by default, JSON on demand.
 
-Subcommands:
-  item                    fetch a story + comment tree
-  search                  full-text search via Algolia
-  top / new / best /
-  ask / show / jobs       front-page feeds (parallel fetch)
-
-Thin shell over hn_cli.api.
+Read-only: fetches stories, comment trees, and search hits. No auth, no cache.
 """
 
 from __future__ import annotations
 
 import json
+import webbrowser
 from dataclasses import asdict
 from enum import StrEnum
 
@@ -21,6 +16,7 @@ from hn_cli.api import get_item, get_top
 from hn_cli.api import search as api_search
 from hn_cli.errors import HNAPIError
 from hn_cli.models import Story
+from hn_cli.parsing import parse_item_id
 from hn_cli.render import story_to_markdown
 
 app = typer.Typer(
@@ -51,6 +47,34 @@ def cmd_item(
         typer.echo(json.dumps(asdict(story), ensure_ascii=False))
     else:
         typer.echo(story_to_markdown(story), nl=False)
+
+
+@app.command("open", help="Open an HN item in the default web browser.")
+def cmd_open(
+    id_or_url: str = typer.Argument(..., help="Item ID or news.ycombinator.com/item URL."),
+    story: bool = typer.Option(
+        False,
+        "--story",
+        help="Open the linked article instead of the HN comment page (errors on self-posts).",
+    ),
+) -> None:
+    try:
+        item_id = parse_item_id(id_or_url)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+    if not story:
+        webbrowser.open(f"https://news.ycombinator.com/item?id={item_id}", new=2)
+        return
+    try:
+        s = get_item(item_id, depth=0)
+    except HNAPIError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+    if not s.url:
+        typer.echo(f"item {item_id} is a self-post; no external URL to open.", err=True)
+        raise typer.Exit(1)
+    webbrowser.open(s.url, new=2)
 
 
 @app.command("search", help="Full-text search HN via Algolia.")

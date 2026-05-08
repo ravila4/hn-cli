@@ -223,3 +223,54 @@ def test_search_whitespace_query_rejected(runner):
     res = runner.invoke(app, ["search", "   "])
     assert res.exit_code == 1
     assert "empty" in res.stderr.lower()
+
+
+# -- hn open -----------------------------------------------------------------
+
+
+def test_open_defaults_to_hn_comment_page(runner, monkeypatch):
+    captured: list[str] = []
+    monkeypatch.setattr("hn_cli.cli.webbrowser.open", lambda url, new=0: captured.append(url))
+    res = runner.invoke(app, ["open", "48052537"])
+    assert res.exit_code == 0
+    assert captured == ["https://news.ycombinator.com/item?id=48052537"]
+
+
+def test_open_accepts_url_input(runner, monkeypatch):
+    captured: list[str] = []
+    monkeypatch.setattr("hn_cli.cli.webbrowser.open", lambda url, new=0: captured.append(url))
+    res = runner.invoke(app, ["open", "https://news.ycombinator.com/item?id=42"])
+    assert res.exit_code == 0
+    assert captured == ["https://news.ycombinator.com/item?id=42"]
+
+
+def test_open_story_opens_linked_article(runner, mock, algolia_item_42, monkeypatch):
+    mock.get(f"{ALGOLIA}/items/42").mock(return_value=httpx.Response(200, json=algolia_item_42))
+    captured: list[str] = []
+    monkeypatch.setattr("hn_cli.cli.webbrowser.open", lambda url, new=0: captured.append(url))
+    res = runner.invoke(app, ["open", "42", "--story"])
+    assert res.exit_code == 0
+    assert captured == ["https://example.com/foo"]
+
+
+def test_open_story_errors_on_self_post(runner, mock, algolia_item_ask_hn, monkeypatch):
+    mock.get(f"{ALGOLIA}/items/100").mock(
+        return_value=httpx.Response(200, json=algolia_item_ask_hn)
+    )
+    monkeypatch.setattr(
+        "hn_cli.cli.webbrowser.open",
+        lambda *_a, **_k: pytest.fail("should not open browser on self-post"),
+    )
+    res = runner.invoke(app, ["open", "100", "--story"])
+    assert res.exit_code == 1
+    assert "self-post" in res.stderr.lower() or "no url" in res.stderr.lower()
+
+
+def test_open_invalid_id_exits_1(runner, monkeypatch):
+    monkeypatch.setattr(
+        "hn_cli.cli.webbrowser.open",
+        lambda *_a, **_k: pytest.fail("should not open browser on bad id"),
+    )
+    res = runner.invoke(app, ["open", "not_a_number"])
+    assert res.exit_code == 1
+    assert res.stderr

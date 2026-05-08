@@ -25,6 +25,7 @@ Output is markdown by default; `--json` emits structured data (single object for
 |---|---|---|
 | `hn item <id-or-url>` | Story plus full comment tree | Algolia `items/{id}` |
 | `hn search <query>` | Full-text search of stories | Algolia `search` |
+| `hn open <id-or-url>` | Open in the default browser. `--story` opens the linked article instead of the HN comment page. | none (no fetch unless `--story`) |
 | `hn top` | Front-page feed | Firebase `topstories.json` |
 | `hn new` | Newest submissions | Firebase `newstories.json` |
 | `hn best` | Highest-scoring recent stories | Firebase `beststories.json` |
