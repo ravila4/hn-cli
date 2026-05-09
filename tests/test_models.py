@@ -249,6 +249,94 @@ class TestStoryType:
         assert s.type == "ask"
 
 
+class TestDepthHistogram:
+    """Per-level comment counts for sizing a re-fetch at a different `--depth`."""
+
+    def test_fixture_tree(self, algolia_item_42):
+        # Fixture: 2 top-level (43, 45), 1 reply (44 under 43).
+        s = Story.from_algolia_item(algolia_item_42)
+        assert s.depth_histogram == (2, 1)
+
+    def test_empty_thread(self, algolia_item_ask_hn):
+        s = Story.from_algolia_item(algolia_item_ask_hn)
+        assert s.depth_histogram == ()
+
+    def test_only_populated_on_algolia_item(self, algolia_search_rust, firebase_item_42):
+        # Search hits and Firebase per-item never carry a tree, so histogram is empty.
+        hit = Story.from_algolia_hit(algolia_search_rust["hits"][0])
+        fb = Story.from_firebase(firebase_item_42)
+        assert hit.depth_histogram == ()
+        assert fb.depth_histogram == ()
+
+    def test_deeper_tree(self):
+        # Build a tree with shape: 3 top-level, 2 replies under one of them,
+        # 1 reply under one of those. Expected histogram: (3, 2, 1).
+        d = {
+            "id": 1,
+            "type": "story",
+            "author": "x",
+            "created_at_i": 0,
+            "title": "t",
+            "url": None,
+            "text": None,
+            "points": 0,
+            "children": [
+                {
+                    "id": 10,
+                    "type": "comment",
+                    "author": "a",
+                    "created_at_i": 0,
+                    "text": "x",
+                    "children": [
+                        {
+                            "id": 100,
+                            "type": "comment",
+                            "author": "b",
+                            "created_at_i": 0,
+                            "text": "x",
+                            "children": [
+                                {
+                                    "id": 1000,
+                                    "type": "comment",
+                                    "author": "c",
+                                    "created_at_i": 0,
+                                    "text": "x",
+                                    "children": [],
+                                }
+                            ],
+                        },
+                        {
+                            "id": 101,
+                            "type": "comment",
+                            "author": "b",
+                            "created_at_i": 0,
+                            "text": "x",
+                            "children": [],
+                        },
+                    ],
+                },
+                {
+                    "id": 11,
+                    "type": "comment",
+                    "author": "a",
+                    "created_at_i": 0,
+                    "text": "x",
+                    "children": [],
+                },
+                {
+                    "id": 12,
+                    "type": "comment",
+                    "author": "a",
+                    "created_at_i": 0,
+                    "text": "x",
+                    "children": [],
+                },
+            ],
+        }
+        s = Story.from_algolia_item(d)
+        assert s.depth_histogram == (3, 2, 1)
+
+
 class TestFrozen:
     def test_story_is_frozen(self):
         s = Story(id=1, title="t", url=None, score=0, by="a", time=0, descendants=0)

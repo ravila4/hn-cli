@@ -91,6 +91,10 @@ def story_to_markdown(s: Story, *, now: int | None = None) -> str:
         f"{s.descendants} comments · id {s.id}"
     )
     lines.append(meta)
+    if s.depth_histogram:
+        # Per-level counts let an agent pick `--depth` before re-fetching:
+        # "80, 170, 162, 68" → depth=2 shows 250 comments, depth=3 shows 412.
+        lines.append(f"_Comments per depth: {', '.join(str(n) for n in s.depth_histogram)}_")
     if s.url:
         lines.append("")
         lines.append(s.url)

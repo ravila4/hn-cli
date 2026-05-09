@@ -41,7 +41,7 @@ All commands accept `-h` / `--help`.
 - `-n / --limit N` — cap result count (default 30 for feeds and search).
 - `--min-score N` — drop low-scoring results (search and feeds).
 - `--min-comments N` (search only) — drop hits below this comment count (`descendants >= N`).
-- `-d / --depth N` (item only) — max comment nesting depth (default 3). `--depth 0` returns story metadata + total descendant count without rendering or transferring the comment tree — use it to probe a thread's size before drilling in. Replies beyond `--depth` are pruned and reported via `truncated_replies` (per-parent) and `truncated_total` (aggregated) in JSON, and `[N replies not shown]` in markdown.
+- `-d / --depth N` (item only) — max comment nesting depth (default 3). `--depth 0` returns story metadata + total descendant count without rendering or transferring the comment tree — use it to probe a thread's size before drilling in. The `depth_histogram` field (and its `Comments per depth: ...` markdown line) gives per-level counts so you can size the next fetch precisely. Replies beyond `--depth` are pruned and reported via `truncated_replies` (per-parent) and `truncated_total` (aggregated) in JSON, and `[N replies not shown]` in markdown.
 - `--since DURATION` (search only) — filter to recent items. Duration strings: `30s`, `30m`, `24h`, `7d`, `2w`, `1y`. Case-insensitive. Strings — not integers.
 - `--sort relevance|date` (search only) — Algolia ranking strategy.
 - `--type story|ask|show|job` (search only) — filter by submission kind. Default `story` matches all non-job posts (including Ask/Show HN). `ask`/`show` narrow to those subtypes; `job` switches to the jobs tag.
@@ -121,8 +121,9 @@ Self-post-only field (present when upstream provides it; absent on link posts an
 | `children` | array | each child: `id`, `by`, `time`, `text`, `children`, `truncated_replies` |
 | `truncated_replies` | int | `>0` only when `--depth` pruned descendants directly at the root (i.e. `--depth 0`) |
 | `truncated_total` | int | count of descendants pruned by `--depth`. Pure depth accounting — does **not** include comments Algolia simply didn't return. To check for upstream gaps, compare `descendants` to `returned + truncated_total` where `returned = [.. \| objects \| select(has("text"))] \| length`; a gap larger than ±2 means Algolia returned a sparse tree and bumping `--depth` won't help (refetch instead). |
+| `depth_histogram` | array of int | per-level comment counts in the *full* tree (`[0]` = top-level, `[1]` = direct replies, etc.). Survives `--depth` truncation, so a cheap `--depth 0` probe tells you exactly how many comments a re-fetch at depth N would render — sum the first N entries. |
 
-`hn top|new|best|ask|show|jobs` and `hn search` **omit** `children`, `truncated_replies`, and `truncated_total`. Detect a missing `children` key as "thread not fetched, call `hn item <id>` to drill in."
+`hn top|new|best|ask|show|jobs` and `hn search` **omit** `children`, `truncated_replies`, `truncated_total`, and `depth_histogram`. Detect a missing `children` key as "thread not fetched, call `hn item <id>` to drill in."
 
 In **JSON output**, `text` fields have HTML entities decoded (`&#x2F;` → `/`, `&#x27;` → `'`, `&amp;` → `&`) but tags are preserved as-is — strip or render to taste. Library callers reading `Story.text` / `Comment.text` directly see **raw HTML** with entities intact; decode with `html.unescape()` if needed. The split is deliberate: decoding before passing through the markdown renderer corrupts content that legitimately contains escaped HTML special chars (`&lt;div&gt;`).
 

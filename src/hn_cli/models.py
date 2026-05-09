@@ -84,6 +84,11 @@ class Story:
     job — useful for triaging a feed without a second round trip.
     `truncated_total` aggregates pruning across the whole tree so callers
     can decide whether to refetch with a deeper `--depth`.
+    `depth_histogram[i]` is the number of comments at nesting level `i`
+    in the *full* tree (index 0 = top-level comments, index 1 = direct
+    replies to those, etc.). Computed from the Algolia thread response
+    and preserved across client-side truncation, so callers can size a
+    re-fetch at a different `--depth` without walking the tree.
     """
 
     id: int
@@ -98,6 +103,7 @@ class Story:
     children: tuple[Comment, ...] = field(default_factory=tuple)
     truncated_replies: int = 0
     truncated_total: int = 0
+    depth_histogram: tuple[int, ...] = ()
 
     @classmethod
     def from_algolia_item(cls, d: dict[str, Any]) -> Story:
@@ -117,6 +123,7 @@ class Story:
             text=d.get("text"),
             type=_infer_story_type(d.get("_tags"), title, None),
             children=children,
+            depth_histogram=_depth_histogram(children),
         )
 
     @classmethod
@@ -156,3 +163,20 @@ class Story:
 
 def _count_descendants(children: tuple[Comment, ...]) -> int:
     return sum(1 + _count_descendants(c.children) for c in children)
+
+
+def _depth_histogram(children: tuple[Comment, ...]) -> tuple[int, ...]:
+    """Per-level comment counts. Length = max depth in tree; () if empty."""
+    counts: list[int] = []
+
+    def walk(level: tuple[Comment, ...], depth: int) -> None:
+        if not level:
+            return
+        if depth >= len(counts):
+            counts.append(0)
+        counts[depth] += len(level)
+        for c in level:
+            walk(c.children, depth + 1)
+
+    walk(children, 0)
+    return tuple(counts)

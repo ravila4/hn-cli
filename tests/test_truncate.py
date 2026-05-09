@@ -109,3 +109,19 @@ class TestTruncatedTotal:
         out = truncate_story(s, 2)
         # `4` and its child `5` are gone — that's 2 pruned descendants.
         assert out.truncated_total == 2
+
+
+class TestDepthHistogramPreserved:
+    """Truncation prunes the rendered tree but the histogram is the *full*
+    shape — the whole point is to size a re-fetch at another depth."""
+
+    def test_histogram_survives_truncation(self):
+        from dataclasses import replace
+        s = replace(
+            _story(_comment(2, _comment(3, _comment(4))), _comment(5)),
+            depth_histogram=(2, 1, 1),
+        )
+        out = truncate_story(s, 1)
+        assert out.depth_histogram == (2, 1, 1)
+        out0 = truncate_story(s, 0)
+        assert out0.depth_histogram == (2, 1, 1)

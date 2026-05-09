@@ -51,6 +51,45 @@ def test_item_json_emits_single_object(runner, mock, algolia_item_42):
     assert "truncated_replies" in obj
 
 
+def test_item_json_exposes_depth_histogram(runner, mock, algolia_item_42):
+    # Per-level counts so a caller can size a re-fetch at a different `--depth`
+    # without walking the tree. Fixture has 2 top-level + 1 reply → (2, 1).
+    mock.get(f"{ALGOLIA}/items/42").mock(return_value=httpx.Response(200, json=algolia_item_42))
+    res = runner.invoke(app, ["item", "42", "--json"])
+    obj = json.loads(res.stdout.strip())
+    assert obj["depth_histogram"] == [2, 1]
+
+
+def test_item_markdown_includes_depth_histogram(runner, mock, algolia_item_42):
+    mock.get(f"{ALGOLIA}/items/42").mock(return_value=httpx.Response(200, json=algolia_item_42))
+    res = runner.invoke(app, ["item", "42"])
+    assert res.exit_code == 0
+    assert "Comments per depth: 2, 1" in res.stdout
+
+
+def test_item_depth_zero_still_shows_histogram(runner, mock, algolia_item_42):
+    # The agent-friendly preview path: --depth 0 hides the body but the
+    # histogram still tells you how big a re-fetch at depth N would be.
+    mock.get(f"{ALGOLIA}/items/42").mock(return_value=httpx.Response(200, json=algolia_item_42))
+    res = runner.invoke(app, ["item", "42", "--depth", "0"])
+    assert res.exit_code == 0
+    assert "Comments per depth: 2, 1" in res.stdout
+
+
+def test_top_jsonl_drops_depth_histogram(runner, mock, firebase_topstories, firebase_item_42):
+    # Listing rows have no comment tree; histogram would always be [] and is noise.
+    mock.get(f"{FIREBASE}/topstories.json").mock(
+        return_value=httpx.Response(200, json=firebase_topstories)
+    )
+    for sid in firebase_topstories:
+        mock.get(f"{FIREBASE}/item/{sid}.json").mock(
+            return_value=httpx.Response(200, json={**firebase_item_42, "id": sid})
+        )
+    res = runner.invoke(app, ["top", "--limit", "3", "--json"])
+    for line in (ln for ln in res.stdout.splitlines() if ln.strip()):
+        assert "depth_histogram" not in json.loads(line)
+
+
 def test_item_depth_truncates(runner, mock, algolia_item_42):
     mock.get(f"{ALGOLIA}/items/42").mock(return_value=httpx.Response(200, json=algolia_item_42))
     res = runner.invoke(app, ["item", "42", "--depth", "1", "--json"])

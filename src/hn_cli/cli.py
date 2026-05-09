@@ -231,6 +231,7 @@ def _listing_dict(s: Story) -> dict:
     d = _to_json(asdict(s))
     d.pop("children", None)
     d.pop("truncated_replies", None)
+    d.pop("depth_histogram", None)
     return d
 
 
